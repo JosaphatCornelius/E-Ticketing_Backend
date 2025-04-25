@@ -71,15 +71,64 @@ namespace Container_Testing.Controllers
 
                 inputBookingData.BookingID = newBookingData.BookingID;
 
-                await _eTicketingContext.CatalogBooking.AddAsync(inputBookingData);
+                var flightData = await _eTicketingContext.CatalogFlight.FirstOrDefaultAsync(x => x.FlightID.Equals(inputBookingData.FlightID));
 
-                await _eTicketingContext.SaveChangesAsync();
+                var bookingData = await _eTicketingContext.CatalogBooking.AsNoTracking().FirstOrDefaultAsync(x => x.FlightID.Equals(inputBookingData.FlightID) && x.UserID.Equals(inputBookingData.UserID));
 
-                response.StatusCode = 200;
-                response.Message = "Success";
-                response.Data = await _eTicketingContext.CatalogBooking.AsNoTracking().ToListAsync();
+                if (flightData == null)
+                {
+                    return NotFound(new ResponseModels<BookingModels>
+                    {
+                        StatusCode = 404,
+                        Message = "Flight not found!"
+                    });
+                }
 
-                return Ok(response);
+                if (bookingData != null)
+                {
+                    if (!bookingData.BookingConfirmation.Equals("denied"))
+                    {
+                        return BadRequest(new ResponseModels<BookingModels>
+                        {
+                            StatusCode = 400,
+                            Message = "You've already booked this flight!"
+                        });
+                    }
+                }
+
+                TimeSpan? dateDiff = flightData.FlightTime - DateTime.Now;
+
+                if (dateDiff.HasValue && dateDiff.Value.TotalDays < 2)
+                {
+                    return BadRequest(new ResponseModels<BookingModels>
+                    {
+                        StatusCode = 400,
+                        Message = "You can't book a flight a day before!"
+                    });
+                }
+
+                if (flightData.FlightSeat > 0 && flightData.FlightSeat >= inputBookingData.SeatAmount)
+                {
+                    flightData.FlightSeat = flightData.FlightSeat - inputBookingData.SeatAmount;
+
+                    await _eTicketingContext.CatalogBooking.AddAsync(inputBookingData);
+
+                    await _eTicketingContext.SaveChangesAsync();
+
+                    response.StatusCode = 200;
+                    response.Message = "Success";
+                    response.Data = await _eTicketingContext.CatalogBooking.AsNoTracking().ToListAsync();
+
+                    return Ok(response);
+                }
+                else
+                {
+                    return BadRequest(new ResponseModels<BookingModels>
+                    {
+                        StatusCode = 400,
+                        Message = "You're ordering more seat than it is available!"
+                    });
+                }
             }
             catch (Exception ex)
             {
@@ -133,6 +182,35 @@ namespace Container_Testing.Controllers
 
                 if (!string.IsNullOrEmpty(updatedBooking.BookingConfirmation))
                     existingBooking.BookingConfirmation = updatedBooking.BookingConfirmation;
+
+                var existingFlight = await _eTicketingContext.CatalogFlight.FirstOrDefaultAsync(f => f.FlightID == updatedBooking.FlightID);
+                if (existingFlight == null)
+                {
+                    return NotFound(new ResponseModels<FlightModels> { StatusCode = 404, Message = "Flight not found!" });
+                }
+
+                var existingAirline = await _eTicketingContext.CatalogAirline.FirstOrDefaultAsync(f => f.AirlineID == existingFlight.AirlineID);
+                if (existingFlight == null)
+                {
+                    return NotFound(new ResponseModels<AirlineModels> { StatusCode = 404, Message = "Airline not found!" });
+                }
+
+                if (updatedBooking.BookingConfirmation.Equals("confirmed"))
+                {
+                    if (!existingAirline.TicketSold.HasValue)
+                    {
+                        existingAirline.TicketSold = updatedBooking.SeatAmount;
+                    }
+                    else
+                    {
+                        existingAirline.TicketSold = existingAirline.TicketSold + updatedBooking.SeatAmount;
+                    }
+                }
+
+                if (updatedBooking.BookingConfirmation.Equals("denied"))
+                {
+                    existingFlight.FlightSeat = existingFlight.FlightSeat + updatedBooking.SeatAmount;
+                }
 
                 await _eTicketingContext.SaveChangesAsync();
 

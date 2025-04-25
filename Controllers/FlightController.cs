@@ -18,15 +18,33 @@ namespace Container_Testing.Controllers
         }
 
         [HttpGet("get-flight-list")]
-        public async Task<ActionResult<ResponseModels<FlightModels>>> GetFlightList()
+        public async Task<ActionResult<ResponseModels<FlightModels>>> GetFlightList([FromQuery] string? from, [FromQuery] string? destination, [FromQuery] DateTime? departure)
         {
             try
             {
                 ResponseModels<FlightModels> response = new();
 
-                var flights = await _eTicketingContext.CatalogFlight.AsNoTracking().ToListAsync();
+                // Start with the base query
+                var query = _eTicketingContext.CatalogFlight.AsNoTracking().AsQueryable();
 
-                if (flights.IsNullOrEmpty())
+                // Apply filters conditionally
+                if (!string.IsNullOrEmpty(from))
+                    query = query.Where(x => x.FlightFrom == from);
+
+                if (!string.IsNullOrEmpty(destination))
+                    query = query.Where(x => x.FlightDestination == destination);
+
+                if (departure.HasValue)
+                {
+                    var date = departure.Value.Date;
+                    var nextDate = date.AddDays(1);
+
+                    query = query.Where(x => x.FlightTime >= date && x.FlightTime < nextDate);
+                }
+
+                var flights = await query.ToListAsync();
+
+                if (flights == null || flights.Count == 0)
                 {
                     return NotFound(new ResponseModels<FlightModels>
                     {
@@ -115,8 +133,8 @@ namespace Container_Testing.Controllers
                 if (updatedFlight.FlightArrival.HasValue)
                     existingFlight.FlightArrival = updatedFlight.FlightArrival;
 
-                if (!string.IsNullOrEmpty(updatedFlight.AirlineID))
-                    existingFlight.AirlineID = updatedFlight.AirlineID;
+                if (updatedFlight.FlightSeat.HasValue)
+                    existingFlight.FlightSeat = updatedFlight.FlightSeat;
 
                 if (updatedFlight.FlightPrice.HasValue)
                     existingFlight.FlightPrice = updatedFlight.FlightPrice;
@@ -140,5 +158,61 @@ namespace Container_Testing.Controllers
             }
         }
 
+        [HttpDelete("delete-flight")]
+        public async Task<ActionResult<ResponseModels<FlightModels>>> DeleteFlight([FromQuery] string flightID)
+        {
+            try
+            {
+                var response = new ResponseModels<FlightModels>();
+
+                if (string.IsNullOrEmpty(flightID))
+                {
+                    return BadRequest(new ResponseModels<FlightModels>
+                    {
+                        StatusCode = 400,
+                        Message = "FlightID cannot be empty!"
+                    });
+                }
+
+                var flight = await _eTicketingContext.CatalogFlight.FirstOrDefaultAsync(x => x.FlightID == flightID);
+
+                if (flight == null)
+                {
+                    return NotFound(new ResponseModels<FlightModels>
+                    {
+                        StatusCode = 404,
+                        Message = "Flight not found!"
+                    });
+                }
+
+                var bookingData = await _eTicketingContext.CatalogBooking.FirstOrDefaultAsync(x => x.FlightID == flightID);
+
+                if (bookingData != null)
+                {
+                    return BadRequest(new ResponseModels<FlightModels>
+                    {
+                        StatusCode = 400,
+                        Message = "There's an active booking/ticket on this flight!"
+                    });
+                }
+
+                _eTicketingContext.CatalogFlight.Remove(flight);
+                await _eTicketingContext.SaveChangesAsync();
+
+                response.StatusCode = 200;
+                response.Message = "Flight deleted successfully!";
+                response.Data = await _eTicketingContext.CatalogFlight.AsNoTracking().ToListAsync();
+
+                return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new ResponseModels<FlightModels>
+                {
+                    StatusCode = 500,
+                    Message = "Internal server error: " + ex.Message
+                });
+            }
+        }
     }
 }

@@ -1,6 +1,8 @@
 
 using Container_Testing.Models.Context;
+using Microsoft.AspNetCore.Localization;
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
 
 namespace Container_Testing
 {
@@ -49,6 +51,15 @@ namespace Container_Testing
 
             var app = builder.Build();
 
+
+            var defaultCulture = new CultureInfo("id-ID");
+            var localizationOptions = new RequestLocalizationOptions
+            {
+                DefaultRequestCulture = new RequestCulture(defaultCulture),
+                SupportedCultures = new List<CultureInfo> { defaultCulture },
+                SupportedUICultures = new List<CultureInfo> { defaultCulture }
+            };
+
             // Configure the HTTP request pipeline.
             if (app.Environment.IsDevelopment())
             {
@@ -61,6 +72,8 @@ namespace Container_Testing
             app.UseCors(MyAllowSpecificOrigins);
 
             app.UseSession();
+
+            app.UseRequestLocalization(localizationOptions);
 
             app.UseAuthorization();
 

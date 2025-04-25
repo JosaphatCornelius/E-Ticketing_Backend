@@ -78,6 +78,7 @@ namespace Container_Testing.Controllers
                 if (inputUserData.UserRole.Equals("airline"))
                 {
                     newAirlineData.AirlineID = inputUserData.UserID;
+                    newAirlineData.TicketSold = 0;
 
                     await _eTicketingContext.CatalogAirline.AddAsync(newAirlineData);
                     await _eTicketingContext.SaveChangesAsync();
@@ -124,6 +125,13 @@ namespace Container_Testing.Controllers
                         StatusCode = 404,
                         Message = "User not found!"
                     });
+                }
+
+                if (user.UserRole.Equals("airline"))
+                {
+                    var airline = await _eTicketingContext.CatalogAirline.FirstOrDefaultAsync(x => x.AirlineID == userID);
+
+                    _eTicketingContext.CatalogAirline.Remove(airline);
                 }
 
                 _eTicketingContext.CatalogUser.Remove(user);
@@ -174,6 +182,21 @@ namespace Container_Testing.Controllers
                     });
                 }
 
+                // Hapus airlines yang terkait jika user role adalah 'airline'
+                var airlineUsers = usersToDelete
+                    .Where(x => x.UserRole.Equals("airline", StringComparison.OrdinalIgnoreCase))
+                    .Select(x => x.UserID) // asumsikan AirlineID == UserID
+                    .ToList();
+
+                if (airlineUsers.Any())
+                {
+                    var airlinesToDelete = await _eTicketingContext.CatalogAirline
+                        .Where(a => airlineUsers.Contains(a.AirlineID))
+                        .ToListAsync();
+
+                    _eTicketingContext.CatalogAirline.RemoveRange(airlinesToDelete);
+                }
+
                 _eTicketingContext.CatalogUser.RemoveRange(usersToDelete);
                 await _eTicketingContext.SaveChangesAsync();
 
@@ -192,6 +215,7 @@ namespace Container_Testing.Controllers
                 });
             }
         }
+
 
         [HttpPatch("patch-user")]
         public async Task<ActionResult<ResponseModels<UserModels>>> PatchUser(string userID, [FromBody] UserModels updatedUser)
@@ -225,6 +249,7 @@ namespace Container_Testing.Controllers
                     if (updatedUser.UserRole == "airline")
                     {
                         newAirlineData.AirlineID = updatedUser.UserID;
+                        newAirlineData.TicketSold = 0;
 
                         await _eTicketingContext.CatalogAirline.AddAsync(newAirlineData);
                         await _eTicketingContext.SaveChangesAsync();
